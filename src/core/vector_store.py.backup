@@ -1,0 +1,220 @@
+"""
+VectorStore - High-level wrapper for ChromaDB with Bedrock embeddings.
+
+This provides a unified interface for storing and querying document chunks
+with automatic embedding generation using AWS Bedrock.
+"""
+
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+
+from .chromadb_manager import ChromaDBManager
+from .bedrock_provider import BedrockProvider
+from ..utils import get_logger
+
+logger = get_logger(__name__)
+
+
+class VectorStore:
+    """
+    High-level vector store interface combining ChromaDB and Bedrock embeddings.
+    
+    This class provides a simple interface for:
+    - Storing document chunks with embeddings
+    - Querying by text (automatic embedding generation)
+    - Managing collections
+    """
+    
+    def __init__(self, config: Any):
+        """
+        Initialize VectorStore with config.
+        
+        Args:
+            config: Configuration object with chromadb and bedrock sections
+        """
+        self.config = config
+        
+        # Initialize ChromaDB manager
+        self.db = ChromaDBManager(
+            persist_directory=config.chromadb.persist_directory,
+            collection_name=config.chromadb.collection_name,
+            distance_metric=config.chromadb.distance_metric
+        )
+        
+        # Initialize Bedrock provider for embeddings
+        self.provider = BedrockProvider(
+            model_id=config.bedrock.model_id,
+            embedding_model_id=config.bedrock.embedding_model_id,
+            region=config.bedrock.region
+        )
+        
+        logger.info("Initialized VectorStore with Bedrock embeddings")
+    
+    def add_chunks(
+        self,
+        chunks: List[Any],
+        source: str = "unknown"
+    ):
+        """
+        Add document chunks to the vector store.
+        
+        Automatically generates embeddings for each chunk.
+        
+        Args:
+            chunks: List of PDFChunk objects or text strings
+            source: Source identifier (e.g., filename)
+        """
+        if not chunks:
+            logger.warning("No chunks provided to add_chunks")
+            return
+        
+        logger.info(f"Adding {len(chunks)} chunks to vector store...")
+        
+        # Prepare data
+        ids = []
+        texts = []
+        metadatas = []
+        embeddings = []
+        
+        for i, chunk in enumerate(chunks):
+            # Handle both PDFChunk objects and strings
+            if isinstance(chunk, str):
+                text = chunk
+                metadata = {"source": source, "chunk_id": i}
+            else:
+                text = chunk.text
+                metadata = chunk.metadata.copy() if hasattr(chunk, 'metadata') else {}
+                metadata.update({
+                    "source": source,
+                    "chunk_id": getattr(chunk, 'chunk_id', i),
+                    "page_number": getattr(chunk, 'page_number', None)
+                })
+            
+            # Generate ID
+            chunk_id = f"{source}_chunk_{i}"
+            
+            # Generate embedding using CORRECT method name
+            try:
+                embedding = self.provider.generate_embedding(text)
+                
+                ids.append(chunk_id)
+                texts.append(text)
+                metadatas.append(metadata)
+                embeddings.append(embedding)
+                
+            except Exception as e:
+                logger.error(f"Failed to generate embedding for chunk {i}: {e}")
+                continue
+        
+        # Add to ChromaDB
+        if ids:
+            self.db.add_documents(
+                ids=ids,
+                documents=texts,
+                metadatas=metadatas,
+                embeddings=embeddings
+            )
+            logger.info(f"✅ Added {len(ids)} chunks to vector store")
+        else:
+            logger.warning("No valid chunks to add")
+    
+    def query(
+        self,
+        query_text: str,
+        n_results: int = 3,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Query the vector store with text.
+        
+        Automatically generates embedding for the query.
+        
+        Args:
+            query_text: Query text
+            n_results: Number of results to return
+            where: Optional metadata filter
+            
+        Returns:
+            Dictionary with query results
+        """
+        logger.debug(f"Querying vector store: '{query_text[:100]}...'")
+        
+        # Generate embedding for query using CORRECT method name
+        query_embedding = self.provider.generate_embedding(query_text)
+        
+        # Query ChromaDB
+        results = self.db.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+            where=where
+        )
+        
+        logger.debug(f"Found {len(results.get('documents', [[]])[0])} results")
+        
+        return results
+    
+    def query_by_embedding(
+        self,
+        query_embedding: List[float],
+        n_results: int = 3,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Query the vector store with a pre-computed embedding.
+        
+        Args:
+            query_embedding: Pre-computed embedding vector
+            n_results: Number of results to return
+            where: Optional metadata filter
+            
+        Returns:
+            Dictionary with query results
+        """
+        return self.db.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+            where=where
+        )
+    
+    def get_by_source(self, source: str, limit: int = 100) -> Dict[str, Any]:
+        """
+        Get all chunks from a specific source.
+        
+        Args:
+            source: Source identifier
+            limit: Maximum number of chunks to return
+            
+        Returns:
+            Dictionary with chunks
+        """
+        return self.db.query(
+            query_embeddings=None,
+            n_results=limit,
+            where={"source": source}
+        )
+    
+    def delete_by_source(self, source: str):
+        """
+        Delete all chunks from a specific source.
+        
+        Args:
+            source: Source identifier
+        """
+        logger.info(f"Deleting all chunks from source: {source}")
+        self.db.delete_by_metadata(where={"source": source})
+    
+    def count(self) -> int:
+        """Get total number of documents in the vector store."""
+        return self.db.count()
+    
+    def clear(self):
+        """Clear all documents from the vector store."""
+        logger.warning("Clearing all documents from vector store")
+        self.db.clear_collection()
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get statistics about the vector store."""
+        return self.db.get_stats()
+    
+    def __repr__(self) -> str:
+        return f"VectorStore(collection='{self.db.collection_name}', count={self.count()})"

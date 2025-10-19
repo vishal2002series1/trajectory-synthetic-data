@@ -1,0 +1,88 @@
+{
+    "tools": [
+      {
+        "name": "search_knowledge_base",
+        "description": "Search the knowledge base for relevant information based on a query. Returns relevant document chunks that can help answer the question.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The search query to find relevant information. Should be concise and focused on key concepts."
+            },
+            "n_results": {
+              "type": "integer",
+              "description": "Number of results to return",
+              "default": 3,
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "calculate",
+        "description": "Perform mathematical calculations. Useful for investment calculations, percentage computations, compound interest, etc.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "description": "The mathematical expression to evaluate (e.g., '500 * 12 * 20 * 1.06^20' for savings calculation)"
+            },
+            "description": {
+              "type": "string",
+              "description": "Brief description of what is being calculated"
+            }
+          },
+          "required": ["expression"]
+        }
+      },
+      {
+        "name": "compare_data",
+        "description": "Compare multiple data points or scenarios side by side. Useful for comparing investment strategies, time horizons, asset allocations, etc.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "items_to_compare": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of items or scenarios to compare"
+            },
+            "comparison_criteria": {
+              "type": "string",
+              "description": "What aspect to compare (e.g., 'risk', 'returns', 'time horizon impact')"
+            }
+          },
+          "required": ["items_to_compare", "comparison_criteria"]
+        }
+      },
+      {
+        "name": "analyze_trend",
+        "description": "Analyze trends or patterns in data over time. Useful for understanding how metrics change with different variables.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "metric": {
+              "type": "string",
+              "description": "The metric to analyze (e.g., 'investment returns', 'savings contribution')"
+            },
+            "variable": {
+              "type": "string",
+              "description": "The independent variable (e.g., 'time horizon', 'asset allocation')"
+            }
+          },
+          "required": ["metric", "variable"]
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "metadata": {
+      "version": "1.0",
+      "domain": "financial_planning",
+      "description": "Tool definitions for financial document Q&A and analysis"
+    }
+  }
