@@ -77,7 +77,39 @@
           },
           "required": ["metric", "variable"]
         }
+      },
+      {
+        "name": "get_portfolio_allocation",
+        "description": "Retrieve the user's current portfolio allocation including stocks, bonds, cash, and other assets.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "description": "User identifier"
+            }
+          }
+        }
+      },
+      {
+        "name": "get_portfolio_performance",
+        "description": "Retrieve the user's portfolio performance metrics including returns, gains/losses, and comparisons to benchmarks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "description": "User identifier"
+            },
+            "period": {
+              "type": "string",
+              "description": "Time period for performance (e.g., 'ytd', '1year', '5year')"
+            }
+          }
+        }
       }
+      
+
     ],
     "tool_choice": "auto",
     "metadata": {

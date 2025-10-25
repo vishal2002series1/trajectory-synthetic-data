@@ -1,0 +1,131 @@
+{
+  "seed_queries": [
+    {
+      "id": "seed_001",
+      "query": "What is my current portfolio allocation?",
+      "expected_tools": ["search_knowledge_base"],
+      "expected_decision": "CALL",
+      "context": "User wants to understand their portfolio allocation. The knowledge base contains general information about portfolio allocation strategies.",
+      "golden_answer": "Based on the information in our knowledge base, portfolio allocation refers to how your investments are distributed across different asset classes. A typical allocation might include stocks, bonds, and cash. Let me search for more specific guidance on portfolio allocation strategies.",
+      "domain": "portfolio_management",
+      "complexity": "simple"
+    },
+    {
+      "id": "seed_002",
+      "query": "How has the S&P 500 performed over the past year?",
+      "expected_tools": ["search_knowledge_base"],
+      "expected_decision": "CALL",
+      "context": "User wants market performance data. Knowledge base contains historical market information.",
+      "golden_answer": "Let me search our knowledge base for recent S&P 500 performance data and historical trends.",
+      "domain": "market_analysis",
+      "complexity": "simple"
+    },
+    {
+      "id": "seed_003",
+      "query": "What are the tax implications of selling stocks held for less than a year?",
+      "expected_tools": ["search_knowledge_base"],
+      "expected_decision": "CALL",
+      "context": "User needs tax information. Knowledge base contains tax-related investment information.",
+      "golden_answer": "To answer your question about short-term capital gains tax, let me search our knowledge base for the most current tax implications.",
+      "domain": "taxation",
+      "complexity": "medium"
+    },
+    {
+      "id": "seed_004",
+      "query": "How do I calculate compound interest on my investment?",
+      "expected_tools": ["search_knowledge_base", "calculate"],
+      "expected_decision": "CALL",
+      "context": "User needs calculation help. Will search knowledge base for formula then use calculate tool.",
+      "golden_answer": "I'll help you calculate compound interest. First, let me search for the compound interest formula and then we can calculate based on your specific numbers.",
+      "domain": "investment_calculations",
+      "complexity": "medium"
+    },
+    {
+      "id": "seed_005",
+      "query": "Compare traditional IRA vs Roth IRA for someone in the 24% tax bracket",
+      "expected_tools": ["search_knowledge_base", "compare_data"],
+      "expected_decision": "CALL",
+      "context": "User wants comparison. Will search for IRA information then compare the options.",
+      "golden_answer": "Let me search our knowledge base for information about traditional and Roth IRAs, then I'll provide a comparison for your tax situation.",
+      "domain": "retirement_planning",
+      "complexity": "complex"
+    },
+    {
+      "id": "seed_006",
+      "query": "What is dollar cost averaging and how effective is it over time?",
+      "expected_tools": ["search_knowledge_base", "analyze_trend"],
+      "expected_decision": "CALL",
+      "context": "User wants to understand investment strategy and its effectiveness. Will search then analyze trends.",
+      "golden_answer": "I'll search for information about dollar cost averaging and then analyze its effectiveness over different time periods.",
+      "domain": "investment_strategy",
+      "complexity": "medium"
+    },
+    {
+      "id": "seed_007",
+      "query": "Explain diversification",
+      "expected_tools": ["search_knowledge_base"],
+      "expected_decision": "CALL",
+      "context": "Simple educational query. Knowledge base contains diversification principles.",
+      "golden_answer": "Let me search our knowledge base for comprehensive information about diversification principles.",
+      "domain": "investment_basics",
+      "complexity": "simple"
+    },
+    {
+      "id": "seed_008",
+      "query": "What factors should I consider when rebalancing my portfolio?",
+      "expected_tools": ["search_knowledge_base"],
+      "expected_decision": "CALL",
+      "context": "User needs guidance on portfolio management. Knowledge base has rebalancing strategies.",
+      "golden_answer": "I'll search our knowledge base for guidance on portfolio rebalancing factors and best practices.",
+      "domain": "portfolio_management",
+      "complexity": "medium"
+    },
+    {
+      "id": "seed_009",
+      "query": "How do expense ratios impact long-term investment returns?",
+      "expected_tools": ["search_knowledge_base", "calculate"],
+      "expected_decision": "CALL",
+      "context": "User wants to understand fee impact. Will search then calculate example.",
+      "golden_answer": "Let me search for information about expense ratios and their impact, then I can calculate specific examples to show you the long-term effects.",
+      "domain": "investment_costs",
+      "complexity": "complex"
+    },
+    {
+      "id": "seed_010",
+      "query": "What is the difference between growth and value investing?",
+      "expected_tools": ["search_knowledge_base", "compare_data"],
+      "expected_decision": "CALL",
+      "context": "Educational comparison query. Will search then compare strategies.",
+      "golden_answer": "I'll search our knowledge base for information on growth and value investing strategies, then provide a comparison.",
+      "domain": "investment_strategy",
+      "complexity": "medium"
+    },
+    {
+      "id": "seed_011",
+      "query": "Should I invest in bonds when interest rates are rising?",
+      "expected_tools": ["search_knowledge_base", "analyze_trend"],
+      "expected_decision": "CALL",
+      "context": "Strategic question about market conditions. Will search for bond-rate relationships.",
+      "golden_answer": "Let me search for information about the relationship between bonds and interest rates, and analyze historical trends in similar conditions.",
+      "domain": "fixed_income",
+      "complexity": "complex"
+    },
+    {
+      "id": "seed_012",
+      "query": "What percentage of my portfolio should be in international stocks?",
+      "expected_tools": ["search_knowledge_base"],
+      "expected_decision": "CALL",
+      "context": "Allocation guidance query. Knowledge base has diversification recommendations.",
+      "golden_answer": "I'll search our knowledge base for recommendations on international equity allocation based on modern portfolio theory.",
+      "domain": "portfolio_management",
+      "complexity": "medium"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2025-10-20",
+    "domain": "financial_planning",
+    "total_seeds": 12,
+    "description": "Seed queries designed to trigger CALL decisions with appropriate tools. These queries reference general knowledge that should be in the knowledge base, not user-specific data."
+  }
+}
