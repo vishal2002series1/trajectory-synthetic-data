@@ -257,6 +257,51 @@ ENHANCED QUESTION:"""
     def __repr__(self) -> str:
         """String representation."""
         return "QueryModifier(variations=3: Q⁻, Q, Q⁺)"
+    
+    def transform_iterative(self, query: str, max_iterations: int = 5) -> List[str]:
+        """
+        Iteratively reduce query complexity.
+        Returns: List of simplified queries [Q-1, Q-2, ...]
+        """
+        q_minus_chain = []
+        current_query = query
+        
+        for iteration in range(max_iterations):
+            # Generate simplified version
+            simplified = self._remove_information(current_query)
+            
+            # Check if we actually simplified
+            if simplified.strip().lower() == current_query.strip().lower():
+                break
+            
+            q_minus_chain.append(simplified)
+            
+            # Ask LLM if we can simplify further
+            if not self._can_simplify_further(simplified):
+                break
+            
+            current_query = simplified
+        
+        return q_minus_chain if q_minus_chain else [query]
+
+    def _can_simplify_further(self, query: str) -> bool:
+        """Ask LLM if query can be simplified further"""
+        prompt = f"""Can this query be simplified further while preserving core intent?
+
+    Query: {query}
+
+    Criteria:
+    - YES if query has unnecessary words or can be more concise
+    - NO if already at minimal form (1-3 words) or would lose meaning
+
+    Answer ONLY: YES or NO"""
+        
+        response = self.provider.generate_text(
+            prompt=prompt,
+            max_tokens=10,
+            temperature=0.3
+        )
+        return "YES" in response.strip().upper()
 
 
 if __name__ == "__main__":

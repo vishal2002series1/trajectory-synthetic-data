@@ -28,7 +28,7 @@ tools:
 
 # Generation Settings
 generation:
-  target_qa_pairs: 1500  # For no-seed mode
+  target_qa_pairs: 15  # For no-seed mode
   expansion_factor: 90    # Variations per seed
   
   # Complexity distribution (for no-seed mode)
