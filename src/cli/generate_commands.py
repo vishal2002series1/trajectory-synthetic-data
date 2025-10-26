@@ -14,7 +14,8 @@ from datetime import datetime
 
 from ..core import BedrockProvider, VectorStore
 from ..generators import TrajectoryGeneratorV2
-from ..utils import get_logger, ensure_dir, write_jsonl, read_json
+from ..utils import get_logger, ensure_dir, write_jsonl, read_json, read_jsonl
+# from ..utils import load_config, get_logger, read_json, read_jsonl, write_jsonl
 
 logger = get_logger(__name__)
 
@@ -110,7 +111,8 @@ class GenerateCommand:
             generator = TrajectoryGeneratorV2(
                 bedrock_provider=provider,
                 vector_store=vector_store,
-                config=self.config
+                config=self.config,
+                use_mock_tools=False
             )
             print("✅ Trajectory generator initialized")
             
@@ -126,9 +128,15 @@ class GenerateCommand:
                 print("   For now, please use seed queries")
                 return 1
             else:
-                # Load seed queries
-                seed_data = read_json(seed_file)
+                # Load seed queries - support both .json and .jsonl
+                seed_path = Path(seed_file)
                 
+                if seed_path.suffix == '.jsonl':
+                    seed_data = read_jsonl(seed_file)
+                else:
+                    seed_data = read_json(seed_file)
+                
+                # Extract queries
                 if isinstance(seed_data, dict) and 'seeds' in seed_data:
                     queries = [item['query'] for item in seed_data['seeds']]
                 elif isinstance(seed_data, list):
