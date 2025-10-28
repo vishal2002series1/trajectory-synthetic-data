@@ -122,11 +122,19 @@ class GenerateCommand:
         elif seed_path.suffix == '.json':
             data = read_json(seed_path)
             # If it's a dict with a 'queries' key, extract that
-            if isinstance(data, dict) and 'queries' in data:
-                data = data['queries']
-            # If it's a single dict, wrap in list
-            elif isinstance(data, dict):
-                data = [data]
+            if isinstance(data, dict):
+                if 'seed_queries' in data:  # ✅ FIX: Check for 'seed_queries' FIRST
+                    data = data['seed_queries']
+                elif 'queries' in data:  # ✅ Fallback to 'queries'
+                    data = data['queries']
+                else:
+                    # If it's a single dict with no array wrapper, use it as-is
+                    data = [data]
+            # if isinstance(data, dict) and 'queries' in data:
+            #     data = data['queries']
+            # # If it's a single dict, wrap in list
+            # elif isinstance(data, dict):
+            #     data = [data]
         else:
             raise ValueError(f"Unsupported file format: {seed_path.suffix}. Use .json or .jsonl")
         
