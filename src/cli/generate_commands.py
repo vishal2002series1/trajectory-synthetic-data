@@ -1,226 +1,307 @@
 """
-Generate commands for synthetic trajectory generation.
+Generate Commands for CLI
 
-Handles:
-- Generation from seed queries
-- Generation without seeds (from scratch)
-- Output in configured format
+Fixed to handle both formats:
+1. Simple queries: {"query": "..."}
+2. Transformation output: {"transformed_query": "...", "original_query": "...", ...}
 """
 
-import json
+import typer
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
+import json
 
 from ..core import BedrockProvider, VectorStore
 from ..generators import TrajectoryGeneratorV2
-from ..utils import get_logger, ensure_dir, write_jsonl, read_json, read_jsonl
-# from ..utils import load_config, get_logger, read_json, read_jsonl, write_jsonl
+from ..utils import load_config, get_logger, read_json, read_jsonl
 
 logger = get_logger(__name__)
 
 
 class GenerateCommand:
-    """Command handler for trajectory generation."""
+    """Handle trajectory generation commands."""
     
-    def __init__(self, config):
+    def __init__(self, config=None):
         """
         Initialize generate command.
         
         Args:
-            config: Configuration object
+            config: Optional config object (loaded automatically if not provided)
         """
-        self.config = config
+        self.config = config if config is not None else load_config()
+        self.provider = None
+        self.vector_store = None
+        self.generator = None
         logger.info("GenerateCommand initialized")
+    
+    def _initialize_components(self):
+        """Initialize all required components."""
+        if self.generator is not None:
+            return  # Already initialized
+        
+        print("─" * 80)
+        print("STEP 1: Initializing Components")
+        print("─" * 80)
+        
+        # Initialize VectorStore (it creates its own BedrockProvider and ChromaDB internally)
+        self.vector_store = VectorStore(config=self.config)
+        doc_count = self.vector_store.count()
+        print("✅ VectorStore initialized")
+        print(f"   Collection: {self.config.chromadb.collection_name}")
+        print(f"   Documents: {doc_count}")
+        
+        # Get the provider from VectorStore for the generator
+        self.provider = self.vector_store.provider
+        
+        # Initialize Trajectory Generator
+        self.generator = TrajectoryGeneratorV2(
+            bedrock_provider=self.provider,
+            vector_store=self.vector_store,
+            config=self.config
+        )
+        print("✅ Trajectory generator initialized")
+    
+    def _normalize_query_format(self, item: dict) -> str:
+        """
+        Normalize different query formats to a standard format.
+        
+        Reads the query field name from config.yaml and uses that.
+        
+        Args:
+            item: Dictionary from JSONL file
+            
+        Returns:
+            Extracted query string
+        """
+        # Get the query field name from config.yaml
+        query_field = self.config.output.schema.fields.query  # e.g., "Q" or "Qi"
+        
+        # Priority 1: Check for the configured query field name
+        if query_field in item:
+            return item[query_field]
+        
+        # Priority 2: Fallback to common field names for backward compatibility
+        if 'transformed_query' in item:
+            return item['transformed_query']
+        
+        if 'query' in item:
+            return item['query']
+        
+        if 'original_query' in item:
+            logger.warning("Using 'original_query' as fallback. Consider using transformed queries.")
+            return item['original_query']
+        
+        # If none found, raise error with helpful message
+        available_keys = list(item.keys())
+        raise KeyError(
+            f"Could not find query field. Expected '{query_field}' (from config.yaml). "
+            f"Available keys: {available_keys}"
+        )
+    
+    def _load_queries(self, seed_file: str) -> list:
+        """
+        Load queries from seed file.
+        
+        Supports both .json and .jsonl formats.
+        Automatically detects and normalizes query field names.
+        
+        Args:
+            seed_file: Path to seed file (.json or .jsonl)
+            
+        Returns:
+            List of query strings
+        """
+        seed_path = Path(seed_file)
+        
+        if not seed_path.exists():
+            raise FileNotFoundError(f"Seed file not found: {seed_file}")
+        
+        # Determine file format
+        if seed_path.suffix == '.jsonl':
+            data = read_jsonl(seed_path)
+        elif seed_path.suffix == '.json':
+            data = read_json(seed_path)
+            # If it's a dict with a 'queries' key, extract that
+            if isinstance(data, dict) and 'queries' in data:
+                data = data['queries']
+            # If it's a single dict, wrap in list
+            elif isinstance(data, dict):
+                data = [data]
+        else:
+            raise ValueError(f"Unsupported file format: {seed_path.suffix}. Use .json or .jsonl")
+        
+        # Extract queries with normalization
+        queries = []
+        for idx, item in enumerate(data):
+            try:
+                query = self._normalize_query_format(item)
+                queries.append(query)
+            except KeyError as e:
+                logger.error(f"Error extracting query from item {idx}: {e}")
+                logger.error(f"Item content: {item}")
+                raise
+        
+        logger.info(f"Loaded {len(queries)} queries from {seed_file}")
+        return queries
     
     def generate(
         self,
-        seed_file: Optional[str] = None,
-        no_seed: bool = False,
+        seed_file: str,
+        n_results: int = 3,
+        abstract: bool = True,
         output: Optional[str] = None,
+        no_seed: bool = False,
         limit: Optional[int] = None,
-        format: str = 'jsonl'
-    ) -> int:
+        format: str = "jsonl"  # ADDED format parameter
+    ):
         """
-        Generate synthetic trajectories.
+        Generate trajectories from seed queries.
         
         Args:
-            seed_file: Path to seed queries file
-            no_seed: Generate without seeds
-            output: Output directory
-            limit: Maximum number of examples
-            format: Output format
-            
-        Returns:
-            Exit code (0 = success, 1 = failure)
+            seed_file: Path to seed file (.json or .jsonl)
+            n_results: Number of chunks to retrieve per query
+            abstract: Whether to abstract document references
+            output: Custom output directory (optional)
+            no_seed: Whether to generate without seed queries (not implemented yet)
+            limit: Limit number of queries to process (optional)
+            format: Output format ('jsonl' or 'json')
         """
-        if not seed_file and not no_seed:
-            print("❌ Error: Must provide either seed_file or --no-seed flag")
-            return 1
-        
-        print(f"\n{'='*80}")
+        print("\n" + "=" * 80)
         print("TRAJECTORY GENERATION")
-        print(f"{'='*80}")
+        print("=" * 80)
         
+        # Check if no_seed mode is requested
         if no_seed:
-            print(f"\n⚙️  Mode: NO-SEED generation")
-            print(f"   Will generate queries from ChromaDB content")
-            print(f"   Target: {self.config.generation.target_qa_pairs} QA pairs")
-        else:
-            seed_path = Path(seed_file)
-            if not seed_path.exists():
-                print(f"❌ Error: Seed file not found: {seed_path}")
-                return 1
-            
-            print(f"\n📄 Seed file: {seed_path.name}")
-            print(f"   Path: {seed_path.absolute()}")
+            print("\n⚠️  No-seed generation is not yet implemented.")
+            print("This feature will generate queries directly from PDF content.")
+            print("For now, please provide a seed file with queries.")
+            return
         
-        if limit:
-            print(f"   Limit: {limit} examples")
+        # Resolve seed file path
+        seed_path = Path(seed_file)
+        if not seed_path.is_absolute():
+            seed_path = Path.cwd() / seed_path
         
-        # Prompt for confirmation
-        response = input(f"\nProceed with generation? [y/N]: ")
-        if response.lower() not in ['y', 'yes']:
+        print(f"📄 Seed file: {seed_file}")
+        print(f"   Path: {seed_path}")
+        print(f"   Output format: {format}")
+        
+        # Confirm before proceeding
+        if not typer.confirm("Proceed with generation?"):
             print("❌ Generation cancelled")
-            return 1
+            return
         
         try:
             # Initialize components
-            print(f"\n{'─'*80}")
-            print("STEP 1: Initializing Components")
-            print(f"{'─'*80}")
+            self._initialize_components()
             
-            provider = BedrockProvider(
-                model_id=self.config.bedrock.model_id,
-                embedding_model_id=self.config.bedrock.embedding_model_id,
-                region=self.config.bedrock.region
-            )
-            print("✅ Bedrock provider initialized")
-            
-            vector_store = VectorStore(config=self.config)
-            print(f"✅ VectorStore initialized")
-            print(f"   Collection: {self.config.chromadb.collection_name}")
-            print(f"   Documents: {vector_store.count()}")
-            
-            if vector_store.count() == 0:
-                print("\n⚠️  Warning: ChromaDB is empty!")
-                print("   You need to ingest PDFs first using:")
-                print("   python main.py ingest <pdf_path>")
-                return 1
-            
-            generator = TrajectoryGeneratorV2(
-                bedrock_provider=provider,
-                vector_store=vector_store,
-                config=self.config,
-                use_mock_tools=False
-            )
-            print("✅ Trajectory generator initialized")
-            
-            # Load or generate queries
-            print(f"\n{'─'*80}")
+            # Load queries
+            print("\n" + "─" * 80)
             print("STEP 2: Loading Queries")
-            print(f"{'─'*80}")
+            print("─" * 80)
             
-            if no_seed:
-                # Generate queries from ChromaDB content
-                print("⚙️  Generating queries from document content...")
-                print("   (This feature is under development)")
-                print("   For now, please use seed queries")
-                return 1
-            else:
-                # Load seed queries - support both .json and .jsonl
-                seed_path = Path(seed_file)
-                
-                if seed_path.suffix == '.jsonl':
-                    seed_data = read_jsonl(seed_file)
-                else:
-                    seed_data = read_json(seed_file)
-                
-                # Extract queries
-                if isinstance(seed_data, dict) and 'seeds' in seed_data:
-                    queries = [item['query'] for item in seed_data['seeds']]
-                elif isinstance(seed_data, list):
-                    queries = [item['query'] if isinstance(item, dict) else item 
-                              for item in seed_data]
-                else:
-                    print(f"❌ Error: Invalid seed file format")
-                    return 1
-                
-                print(f"✅ Loaded {len(queries)} seed queries")
-                
-                if limit:
-                    queries = queries[:limit]
-                    print(f"   Limited to {len(queries)} queries")
+            queries = self._load_queries(str(seed_path))
+            print(f"✅ Loaded {len(queries)} queries")
+            
+            # Show first few examples
+            print("\n📝 Sample queries:")
+            for i, query in enumerate(queries[:3], 1):
+                print(f"   {i}. {query[:80]}{'...' if len(query) > 80 else ''}")
+            if len(queries) > 3:
+                print(f"   ... and {len(queries) - 3} more")
+            
+            # Apply limit if specified
+            if limit is not None and limit > 0:
+                queries = queries[:limit]
+                print(f"\n⚠️  Limited to first {limit} queries")
             
             # Generate trajectories
-            print(f"\n{'─'*80}")
+            print("\n" + "─" * 80)
             print("STEP 3: Generating Trajectories")
-            print(f"{'─'*80}\n")
+            print("─" * 80)
             
             trajectories = []
-            
             for i, query in enumerate(queries, 1):
-                print(f"[{i}/{len(queries)}] Generating trajectory for:")
-                print(f"   {query[:80]}...")
+                print(f"\n⏳ Generating trajectory {i}/{len(queries)}...")
+                print(f"   Query: {query[:80]}{'...' if len(query) > 80 else ''}")
                 
                 try:
-                    trajectory = generator.generate_trajectory(
+                    trajectory = self.generator.generate_trajectory(
                         query=query,
-                        n_results=3,
-                        abstract=True
+                        n_results=n_results,
+                        abstract=abstract
                     )
+                    trajectories.append(trajectory)
+                    print(f"   ✅ Generated successfully")
                     
-                    # Convert to output format
-                    output_example = generator.trajectory_to_output_format(
-                        trajectory=trajectory,
-                        include_metadata=self.config.output.schema.include_metadata,
-                        include_tool_results=self.config.output.schema.include_tool_results
-                    )
-                    
-                    trajectories.append(output_example)
-                    print(f"   ✅ Generated\n")
-                
                 except Exception as e:
-                    print(f"   ❌ Error: {e}\n")
-                    logger.error(f"Failed to generate trajectory for query {i}: {e}")
+                    logger.error(f"Error generating trajectory {i}: {e}")
+                    print(f"   ❌ Error: {e}")
+                    continue
             
-            print(f"{'─'*80}")
-            print(f"✅ GENERATION COMPLETE")
-            print(f"{'─'*80}")
-            print(f"\nGenerated {len(trajectories)} trajectories")
+            print(f"\n✅ Generated {len(trajectories)} trajectories")
             
             # Save results
-            if not output:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output = f"data/output/trajectories/{timestamp}"
+            print("\n" + "─" * 80)
+            print("STEP 4: Saving Results")
+            print("─" * 80)
             
-            output_dir = Path(output)
-            ensure_dir(output_dir)
+            # Determine output directory
+            if output:
+                out_dir = Path(output)
+            else:
+                out_dir = Path(self.config.output.output_dir) / "generated"
             
-            if format in ['json', 'both']:
-                json_file = output_dir / "trajectories.json"
-                with open(json_file, 'w') as f:
-                    json.dump(trajectories, f, indent=2)
-                print(f"💾 Saved JSON: {json_file}")
+            out_dir.mkdir(parents=True, exist_ok=True)
             
-            if format in ['jsonl', 'both']:
-                jsonl_file = output_dir / "trajectories.jsonl"
-                write_jsonl(trajectories, str(jsonl_file))
-                print(f"💾 Saved JSONL: {jsonl_file}")
+            # Generate output filename based on format
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_extension = format if format in ['json', 'jsonl'] else 'jsonl'
+            output_file = out_dir / f"trajectories_{timestamp}.{file_extension}"
             
-            # Summary
-            print(f"\n{'='*80}")
-            print("SUMMARY")
-            print(f"{'='*80}")
-            print(f"\n📊 Generation Statistics:")
-            print(f"   Queries processed: {len(queries)}")
+            # Save trajectories
+            self.generator.save_trajectories(
+                trajectories=trajectories,
+                output_path=str(output_file)
+            )
+            
+            print(f"✅ Saved {len(trajectories)} trajectories to:")
+            print(f"   {output_file}")
+            
+            # Show summary
+            print("\n" + "=" * 80)
+            print("GENERATION COMPLETE")
+            print("=" * 80)
+            print(f"\n📊 Summary:")
+            print(f"   Input queries: {len(queries)}")
             print(f"   Trajectories generated: {len(trajectories)}")
             print(f"   Success rate: {len(trajectories)/len(queries)*100:.1f}%")
-            print(f"\n💾 Output saved to: {output_dir}")
+            print(f"   Output format: {format}")
+            print(f"   Output file: {output_file}")
             
-            return 0
-        
         except Exception as e:
-            print(f"\n❌ Error: {e}")
-            logger.error(f"Generation failed: {e}", exc_info=True)
-            return 1
+            logger.error(f"Generation failed: {e}")
+            print(f"❌ Error: {e}")
+            raise
+
+
+def create_generate_app() -> typer.Typer:
+    """Create generate command group."""
+    app = typer.Typer(help="Generate trajectories from queries")
+    cmd = GenerateCommand()
+    
+    @app.command("from-file")
+    def generate_from_file(
+        seed_file: str = typer.Argument(..., help="Path to seed file (.json or .jsonl)"),
+        n_results: int = typer.Option(3, help="Number of chunks to retrieve"),
+        abstract: bool = typer.Option(True, help="Abstract document references"),
+        output: Optional[str] = typer.Option(None, help="Custom output directory"),
+        no_seed: bool = typer.Option(False, help="Generate without seed queries (future feature)"),
+        limit: Optional[int] = typer.Option(None, help="Limit number of queries to process"),
+        format: str = typer.Option("jsonl", help="Output format (json or jsonl)")  # ADDED format option
+    ):
+        """Generate trajectories from seed file."""
+        cmd.generate(seed_file, n_results, abstract, output, no_seed, limit, format)
+    
+    return app
