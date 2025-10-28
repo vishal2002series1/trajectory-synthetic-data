@@ -1,10 +1,13 @@
 """
-Pipeline commands for end-to-end workflow orchestration.
+Pipeline commands for end-to-end workflow orchestration - Phase 2 Multi-Iteration
 
 Handles:
 - Full pipeline: Ingest → Transform → Generate
-- Checkpoint and resume functionality
+- Multi-iteration trajectory generation (1-3 examples per query)
 - Comprehensive progress tracking
+
+Phase 2 Expansion: 15-45× per seed query!
+- 5 personas × 3 complexity levels × (1-3 iterations per query)
 """
 
 import json
@@ -14,14 +17,14 @@ from datetime import datetime
 
 from ..core import BedrockProvider, VectorStore, PDFParser, ChromaDBManager
 from ..transformations import PersonaTransformer, QueryModifier, ToolDataTransformer
-from ..generators import TrajectoryGeneratorV2
-from ..utils import get_logger, ensure_dir, write_jsonl, read_json
+from ..generators import TrajectoryGeneratorMultiIter  # ✅ Phase 2!
+from ..utils import get_logger, ensure_dir, write_jsonl, write_json, read_json
 
 logger = get_logger(__name__)
 
 
 class PipelineCommand:
-    """Command handler for end-to-end pipeline execution."""
+    """Command handler for end-to-end pipeline execution with multi-iteration support."""
     
     def __init__(self, config):
         """
@@ -31,7 +34,7 @@ class PipelineCommand:
             config: Configuration object
         """
         self.config = config
-        logger.info("PipelineCommand initialized")
+        logger.info("PipelineCommand initialized (Phase 2 - Multi-Iteration)")
     
     def run_pipeline(
         self,
@@ -42,21 +45,23 @@ class PipelineCommand:
         limit: Optional[int] = None
     ) -> int:
         """
-        Run complete end-to-end pipeline.
+        Run complete end-to-end pipeline with multi-iteration support.
         
-        Pipeline stages:
-        1. Ingest PDFs (optional)
+        Phase 2 Pipeline:
+        1. Ingest PDFs (if not skipped)
         2. Load seed queries
-        3. Apply all transformations (30×)
-        4. Generate trajectories for each variation
-        5. Save training data
+        3. Apply persona transformations (×5)
+        4. Apply query complexity (Q-, Q, Q+) (×3)
+        5. Generate multi-iteration trajectories (×1-3 per query)
+        
+        Result: 15-45× expansion per seed query!
         
         Args:
             seed_file: Path to seed queries file
             pdf_dir: Directory containing PDFs to ingest
             skip_ingest: Skip ingestion step
             output: Output directory
-            limit: Maximum number of training examples
+            limit: Maximum number of seed queries to process
         
         Returns:
             Exit code (0 = success, 1 = failure)
@@ -83,7 +88,7 @@ class PipelineCommand:
         
         # Display pipeline overview
         print(f"\n{'='*80}")
-        print("COMPLETE PIPELINE EXECUTION")
+        print("COMPLETE PIPELINE EXECUTION (Phase 2 - Multi-Iteration)")
         print(f"{'='*80}")
         print(f"\n📋 Pipeline Configuration:")
         print(f"   Seed file: {seed_path.name}")
@@ -93,10 +98,10 @@ class PipelineCommand:
             print(f"   PDF ingestion: SKIPPED (using existing ChromaDB)")
         print(f"   Output directory: {output_dir}")
         if limit:
-            print(f"   Limit: {limit} training examples")
+            print(f"   Limit: {limit} seed queries")
         
-        print(f"\n📊 Expected Expansion:")
-        print(f"   Per seed query: 30× (5 personas × 3 complexity × 2 tool data)")
+        print(f"\n📊 Expected Expansion (Phase 2):")
+        print(f"   Per seed query: 15-45× (5 personas × 3 complexity × 1-3 iterations)")
         
         # Prompt for confirmation
         response = input(f"\nProceed with pipeline? [y/N]: ")
@@ -107,18 +112,18 @@ class PipelineCommand:
         # Track statistics
         stats = {
             "start_time": datetime.now().isoformat(),
-            "seed_queries": 0,
+            "total_seeds": 0,
             "pdfs_ingested": 0,
-            "transformations_generated": 0,
-            "trajectories_generated": 0,
-            "training_examples": 0,
+            "total_personas": 0,
+            "total_complexities": 0,
+            "total_training_examples": 0,
             "errors": []
         }
         
         try:
-            # ====
+            # ════════════════════════════════════════════════════════════════
             # STAGE 1: PDF INGESTION (Optional)
-            # ====
+            # ════════════════════════════════════════════════════════════════
             
             if not skip_ingest and pdf_dir:
                 print(f"\n{'='*80}")
@@ -138,9 +143,9 @@ class PipelineCommand:
                 print(f"{'='*80}\n")
                 print("Using existing ChromaDB collection")
             
-            # ====
+            # ════════════════════════════════════════════════════════════════
             # STAGE 2: INITIALIZE COMPONENTS
-            # ====
+            # ════════════════════════════════════════════════════════════════
             
             print(f"\n{'='*80}")
             print("STAGE 2: INITIALIZING COMPONENTS")
@@ -163,20 +168,20 @@ class PipelineCommand:
             # Initialize transformers
             persona_tx = PersonaTransformer(provider)
             query_mod = QueryModifier(provider)
-            tool_tx = ToolDataTransformer(provider)
             print("✅ Transformers initialized")
             
-            # Initialize trajectory generator
-            generator = TrajectoryGeneratorV2(
+            # ✅ Multi-Iteration Generator (Phase 2)
+            generator = TrajectoryGeneratorMultiIter(
                 bedrock_provider=provider,
-                vector_store=vector_store,
-                config=self.config
+                config=self.config,
+                max_iterations=3,
+                use_mock_tools=False  # Using real vector store
             )
-            print("✅ Trajectory generator initialized")
+            print("✅ Multi-Iteration trajectory generator initialized (Phase 2)")
             
-            # ====
+            # ════════════════════════════════════════════════════════════════
             # STAGE 3: LOAD SEED QUERIES
-            # ====
+            # ════════════════════════════════════════════════════════════════
             
             print(f"\n{'='*80}")
             print("STAGE 3: LOADING SEED QUERIES")
@@ -186,212 +191,167 @@ class PipelineCommand:
             
             if isinstance(seed_data, dict):
                 if 'seed_queries' in seed_data:
-                    seed_queries = seed_data['seed_queries']
+                    seeds = seed_data['seed_queries']
                 elif 'queries' in seed_data:
-                    seed_queries = seed_data['queries']
+                    seeds = seed_data['queries']
                 else:
                     print(f"❌ Error: Invalid seed file format")
                     return 1
             elif isinstance(seed_data, list):
-                seed_queries = seed_data
+                seeds = seed_data
             else:
                 print(f"❌ Error: Invalid seed file format")
                 return 1
             
             # Normalize to list of strings
             normalized_queries = []
-            for item in seed_queries:
+            for item in seeds:
                 if isinstance(item, str):
                     normalized_queries.append(item)
                 elif isinstance(item, dict):
-                    # Try common keys
-                    if 'query' in item:
-                        normalized_queries.append(item['query'])
-                    elif 'Q' in item:
-                        normalized_queries.append(item['Q'])
-                    elif 'text' in item:
-                        normalized_queries.append(item['text'])
+                    query = item.get('query') or item.get('Q') or item.get('text')
+                    if query:
+                        normalized_queries.append(query)
                     else:
                         print(f"⚠️  Warning: Skipping item with unknown format: {item}")
                 else:
                     print(f"⚠️  Warning: Skipping non-string/dict item: {item}")
             
-            seed_queries = normalized_queries
-            stats["seed_queries"] = len(seed_queries)
-            print(f"✅ Loaded {len(seed_queries)} seed queries")
+            seeds = normalized_queries
+            stats["total_seeds"] = len(seeds)
             
-            # ====
-            # STAGE 4: TRANSFORMATION PIPELINE
-            # ====
-            
-            print(f"\n{'='*80}")
-            print("STAGE 4: TRANSFORMATION PIPELINE (30× EXPANSION)")
-            print(f"{'='*80}\n")
-            
-            all_transformations = []
-            
-            for seed_idx, seed_query in enumerate(seed_queries, 1):
-                print(f"\n{'─'*80}")
-                print(f"SEED {seed_idx}/{len(seed_queries)}: {seed_query[:60]}...")
-                print(f"{'─'*80}\n")
-                
-                try:
-                    # Persona transformation (×5)
-                    print("  Step 1: Persona transformation...")
-                    personas = persona_tx.transform(seed_query)
-                    print(f"    ✅ Generated {len(personas)} variations\n")
-                    
-                    # For each persona, apply query modification
-                    for persona_code, persona_query in personas.items():
-                        print(f"  Step 2.{persona_code}: Query modification...")
-                        complexities = query_mod.transform(persona_query, include_original=True)
-                        print(f"    ✅ Generated {len(complexities)} variations\n")
-                        
-                        # For each complexity, apply tool data transformation
-                        for complexity, complex_query in complexities.items():
-                            print(f"  Step 3.{persona_code}.{complexity}: Tool data...")
-                            tool_vars = tool_tx.transform(
-                                query=complex_query,
-                                tools_used=["search_knowledge_base"],
-                                correct_answer="Sample answer"
-                            )
-                            print(f"    ✅ Generated {len(tool_vars)} variations\n")
-                            
-                            # Store each variation
-                            for tool_type, tool_var in tool_vars.items():
-                                all_transformations.append({
-                                    "seed_query": seed_query,
-                                    "seed_index": seed_idx,
-                                    "persona": persona_code,
-                                    "complexity": complexity,
-                                    "tool_data_type": tool_type,
-                                    "transformed_query": complex_query,
-                                    "tool_data": tool_var.tool_data,
-                                    "expected_behavior": tool_var.expected_behavior
-                                })
-                
-                except Exception as e:
-                    error_msg = f"Transformation failed for seed {seed_idx}: {e}"
-                    print(f"    ❌ {error_msg}\n")
-                    logger.error(error_msg)
-                    stats["errors"].append(error_msg)
-            
-            stats["transformations_generated"] = len(all_transformations)
-            
-            print(f"\n{'─'*80}")
-            print(f"✅ Transformation stage complete")
-            print(f"   Generated {len(all_transformations)} transformed queries")
-            print(f"{'─'*80}")
-            
-            # Save transformations
-            transform_file = output_dir / "transformations.jsonl"
-            write_jsonl(all_transformations, str(transform_file))
-            print(f"💾 Saved transformations: {transform_file}")
-            
-            # Apply limit if specified
+            # Apply limit
             if limit:
-                all_transformations = all_transformations[:limit]
-                print(f"\n⚙️  Limited to {len(all_transformations)} transformations")
+                seeds = seeds[:limit]
+                print(f"✅ Loaded {stats['total_seeds']} seed queries (limiting to {limit})")
+            else:
+                print(f"✅ Loaded {len(seeds)} seed queries")
             
-            # ====
-            # STAGE 5: TRAJECTORY GENERATION
-            # ====
-            
-            print(f"\n{'='*80}")
-            print("STAGE 5: TRAJECTORY GENERATION")
-            print(f"{'='*80}\n")
-            
-            training_examples = []
-            
-            for idx, transformation in enumerate(all_transformations, 1):
-                print(f"[{idx}/{len(all_transformations)}] Generating trajectory...")
-                print(f"  Query: {transformation['transformed_query'][:70]}...")
-                
-                try:
-                    trajectory = generator.generate_trajectory(
-                        query=transformation['transformed_query'],
-                        n_results=3,
-                        abstract=True
-                    )
-                    
-                    # Convert to training format
-                    training_example = generator.trajectory_to_output_format(
-                        trajectory=trajectory,
-                        include_metadata=True,
-                        include_tool_results=False
-                    )
-                    
-                    # Add transformation metadata
-                    training_example['metadata'].update({
-                        "seed_query": transformation['seed_query'],
-                        "persona": transformation['persona'],
-                        "complexity": transformation['complexity'],
-                        "tool_data_type": transformation['tool_data_type']
-                    })
-                    
-                    training_examples.append(training_example)
-                    print(f"  ✅ Generated\n")
-                
-                except Exception as e:
-                    error_msg = f"Trajectory generation failed for item {idx}: {e}"
-                    print(f"  ❌ {error_msg}\n")
-                    logger.error(error_msg)
-                    stats["errors"].append(error_msg)
-            
-            stats["trajectories_generated"] = len(training_examples)
-            stats["training_examples"] = len(training_examples)
-            
-            print(f"\n{'─'*80}")
-            print(f"✅ Trajectory generation complete")
-            print(f"   Generated {len(training_examples)} training examples")
-            print(f"{'─'*80}")
-            
-            # ====
-            # STAGE 6: SAVE TRAINING DATA
-            # ====
+            # ════════════════════════════════════════════════════════════════
+            # STAGE 4: APPLY TRANSFORMATIONS & GENERATE
+            # ════════════════════════════════════════════════════════════════
             
             print(f"\n{'='*80}")
-            print("STAGE 6: SAVING TRAINING DATA")
+            print("STAGE 4: APPLYING TRANSFORMATIONS & GENERATING TRAJECTORIES")
             print(f"{'='*80}\n")
             
-            # Save training data
-            training_file = output_dir / "training_data.jsonl"
-            write_jsonl(training_examples, str(training_file))
-            print(f"💾 Saved training data: {training_file}")
+            all_training_examples = []
+            
+            for seed_idx, seed in enumerate(seeds, 1):
+                print(f"\n{'='*80}")
+                print(f"SEED {seed_idx}/{len(seeds)}: {seed[:80]}...")
+                print(f"{'='*80}")
+                
+                # Get query text
+                query = seed if isinstance(seed, str) else seed.get('query', '')
+                
+                # Apply persona transformation
+                print(f"  Applying persona transformation...")
+                personas = persona_tx.transform(query)
+                stats["total_personas"] += len(personas)
+                print(f"  ✅ Generated {len(personas)} persona variations")
+                
+                # For each persona (limit to 2 for demo)
+                for persona_code, persona_query in list(personas.items()):
+                    print(f"\n  {'─'*76}")
+                    print(f"  PERSONA: {persona_code}")
+                    print(f"  {'─'*76}")
+                    
+                    # Apply query complexity modifications
+                    print(f"    Applying complexity modifications...")
+                    complexities = query_mod.transform(persona_query, include_original=False)
+                    stats["total_complexities"] += len(complexities)
+                    print(f"    ✅ Generated {len(complexities)} complexity variations")
+                    
+                    # For each complexity level (limit to 2 for demo)
+                    for complexity, complex_query in list(complexities.items()):
+                        print(f"\n    ··········································")
+                        print(f"    COMPLEXITY: {complexity}")
+                        print(f"    ··········································")
+                        print(f"    Query: {complex_query[:70]}...")
+                        
+                        # ✅ Generate multi-iteration trajectory
+                        print(f"      Generating trajectory...")
+                        try:
+                            examples = generator.generate_trajectory(
+                                query=complex_query,
+                                metadata={
+                                    "seed_query": query,
+                                    "persona": persona_code,
+                                    "complexity": complexity
+                                }
+                            )
+                            
+                            print(f"      ✅ Generated {len(examples)} training examples")
+                            
+                            # Show example details
+                            for ex_idx, ex in enumerate(examples):
+                                decision_type = ex.metadata["decision_type"]
+                                iteration = ex.metadata["iteration"]
+                                print(f"        Example {ex_idx+1}: Iteration {iteration} → {decision_type}")
+                            
+                            # Convert to output format and collect
+                            for example in examples:
+                                example_dict = example.to_dict(generator.field_names)
+                                all_training_examples.append(example_dict)
+                            
+                            stats["total_training_examples"] += len(examples)
+                            
+                        except Exception as e:
+                            error_msg = f"Trajectory generation failed: {e}"
+                            print(f"      ❌ {error_msg}")
+                            logger.error(error_msg)
+                            stats["errors"].append(error_msg)
+            
+            # ════════════════════════════════════════════════════════════════
+            # STAGE 5: SAVE RESULTS
+            # ════════════════════════════════════════════════════════════════
+            
+            print(f"\n{'='*80}")
+            print("STAGE 5: SAVING RESULTS")
+            print(f"{'='*80}\n")
+            
+            # Save training examples
+            output_file = output_dir / "training_examples.jsonl"
+            write_jsonl(all_training_examples, str(output_file))
+            print(f"✅ Saved {len(all_training_examples)} examples to: {output_file}")
             
             # Save statistics
             stats["end_time"] = datetime.now().isoformat()
-            stats_file = output_dir / "pipeline_stats.json"
-            with open(stats_file, 'w') as f:
-                json.dump(stats, f, indent=2)
-            print(f"💾 Saved statistics: {stats_file}")
+            stats_file = output_dir / "generation_stats.json"
+            write_json(stats, str(stats_file))
+            print(f"✅ Saved statistics to: {stats_file}")
             
-            # ====
-            # FINAL SUMMARY
-            # ====
+            # ════════════════════════════════════════════════════════════════
+            # SUMMARY
+            # ════════════════════════════════════════════════════════════════
             
             print(f"\n{'='*80}")
             print("PIPELINE COMPLETE")
             print(f"{'='*80}")
             
-            print(f"\n📊 Final Statistics:")
-            print(f"   Seed queries: {stats['seed_queries']}")
-            if stats["pdfs_ingested"] > 0:
-                print(f"   PDFs ingested: {stats['pdfs_ingested']}")
-            print(f"   Transformations: {stats['transformations_generated']}")
-            print(f"   Trajectories: {stats['trajectories_generated']}")
-            print(f"   Training examples: {stats['training_examples']}")
+            print(f"\n📊 STATISTICS:")
+            print(f"   Seed Queries: {stats['total_seeds']}")
+            print(f"   Persona Variations: {stats['total_personas']}")
+            print(f"   Complexity Variations: {stats['total_complexities']}")
+            print(f"   Training Examples Generated: {stats['total_training_examples']}")
+            
+            avg_examples = stats['total_training_examples'] / stats['total_seeds']
+            print(f"\n   Average Examples per Seed: {avg_examples:.1f}")
+            
+            print(f"\n🎯 EXPANSION FACTOR:")
+            print(f"   Achieved: ~{avg_examples:.0f}× per seed query")
+            print(f"   (With full transformations: 15-45× possible)")
+            
+            print(f"\n✅ OUTPUT:")
+            print(f"   Training Data: {output_file}")
+            print(f"   Statistics: {stats_file}")
             
             if stats["errors"]:
                 print(f"\n⚠️  Errors encountered: {len(stats['errors'])}")
                 print(f"   (See {stats_file} for details)")
             
-            print(f"\n💾 Output directory: {output_dir}")
-            print(f"   - transformations.jsonl ({stats['transformations_generated']} items)")
-            print(f"   - training_data.jsonl ({stats['training_examples']} items)")
-            print(f"   - pipeline_stats.json")
-            
-            print(f"\n✅ Pipeline executed successfully!")
+            print(f"\n{'='*80}")
             
             return 0
         

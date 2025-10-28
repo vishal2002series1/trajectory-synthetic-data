@@ -1,13 +1,9 @@
-
 """
-Generate Commands for CLI - Phase 2 Multi-Iteration
+Generate Commands for CLI
 
-Handles multi-iteration trajectory generation:
-- CALL → ANSWER (simple queries)
-- ASK (ambiguous queries)
-- CALL → CALL → ANSWER (complex queries)
-
-Each query generates 1-3 training examples based on complexity.
+Fixed to handle both formats:
+1. Simple queries: {"query": "..."}
+2. Transformation output: {"transformed_query": "...", "original_query": "...", ...}
 """
 
 import typer
@@ -16,14 +12,14 @@ from typing import Optional
 import json
 
 from ..core import BedrockProvider, VectorStore
-from ..generators import TrajectoryGeneratorMultiIter  # ✅ Phase 2!
+from ..generators import TrajectoryGeneratorV2
 from ..utils import load_config, get_logger, read_json, read_jsonl
 
 logger = get_logger(__name__)
 
 
 class GenerateCommand:
-    """Handle trajectory generation commands with multi-iteration support."""
+    """Handle trajectory generation commands."""
     
     def __init__(self, config=None):
         """
@@ -36,7 +32,7 @@ class GenerateCommand:
         self.provider = None
         self.vector_store = None
         self.generator = None
-        logger.info("GenerateCommand initialized (Phase 2 - Multi-Iteration)")
+        logger.info("GenerateCommand initialized")
     
     def _initialize_components(self):
         """Initialize all required components."""
@@ -47,30 +43,29 @@ class GenerateCommand:
         print("STEP 1: Initializing Components")
         print("─" * 80)
         
-        # Initialize VectorStore
+        # Initialize VectorStore (it creates its own BedrockProvider and ChromaDB internally)
         self.vector_store = VectorStore(config=self.config)
         doc_count = self.vector_store.count()
         print("✅ VectorStore initialized")
         print(f"   Collection: {self.config.chromadb.collection_name}")
         print(f"   Documents: {doc_count}")
         
-        # Get the provider from VectorStore
+        # Get the provider from VectorStore for the generator
         self.provider = self.vector_store.provider
         
-        # ✅ Initialize Multi-Iteration Trajectory Generator (Phase 2)
-        self.generator = TrajectoryGeneratorMultiIter(
+        # Initialize Trajectory Generator
+        self.generator = TrajectoryGeneratorV2(
             bedrock_provider=self.provider,
-            config=self.config,
-            max_iterations=3,
-            use_mock_tools=False  # Using real vector store
+            vector_store=self.vector_store,
+            config=self.config
         )
-        print("✅ Multi-Iteration trajectory generator initialized (Phase 2)")
-        print(f"   Max iterations: 3")
-        print(f"   Field names: {self.generator.field_names}")
+        print("✅ Trajectory generator initialized")
     
     def _normalize_query_format(self, item: dict) -> str:
         """
         Normalize different query formats to a standard format.
+        
+        Reads the query field name from config.yaml and uses that.
         
         Args:
             item: Dictionary from JSONL file
@@ -85,7 +80,7 @@ class GenerateCommand:
         if query_field in item:
             return item[query_field]
         
-        # Priority 2: Fallback to common field names
+        # Priority 2: Fallback to common field names for backward compatibility
         if 'transformed_query' in item:
             return item['transformed_query']
         
@@ -93,10 +88,10 @@ class GenerateCommand:
             return item['query']
         
         if 'original_query' in item:
-            logger.warning("Using 'original_query' as fallback.")
+            logger.warning("Using 'original_query' as fallback. Consider using transformed queries.")
             return item['original_query']
         
-        # If none found, raise error
+        # If none found, raise error with helpful message
         available_keys = list(item.keys())
         raise KeyError(
             f"Could not find query field. Expected '{query_field}' (from config.yaml). "
@@ -108,6 +103,7 @@ class GenerateCommand:
         Load queries from seed file.
         
         Supports both .json and .jsonl formats.
+        Automatically detects and normalizes query field names.
         
         Args:
             seed_file: Path to seed file (.json or .jsonl)
@@ -125,14 +121,20 @@ class GenerateCommand:
             data = read_jsonl(seed_path)
         elif seed_path.suffix == '.json':
             data = read_json(seed_path)
-            # Handle different JSON structures
+            # If it's a dict with a 'queries' key, extract that
             if isinstance(data, dict):
-                if 'seed_queries' in data:
+                if 'seed_queries' in data:  # ✅ FIX: Check for 'seed_queries' FIRST
                     data = data['seed_queries']
-                elif 'queries' in data:
+                elif 'queries' in data:  # ✅ Fallback to 'queries'
                     data = data['queries']
                 else:
+                    # If it's a single dict with no array wrapper, use it as-is
                     data = [data]
+            # if isinstance(data, dict) and 'queries' in data:
+            #     data = data['queries']
+            # # If it's a single dict, wrap in list
+            # elif isinstance(data, dict):
+            #     data = [data]
         else:
             raise ValueError(f"Unsupported file format: {seed_path.suffix}. Use .json or .jsonl")
         
@@ -140,13 +142,8 @@ class GenerateCommand:
         queries = []
         for idx, item in enumerate(data):
             try:
-                if isinstance(item, str):
-                    queries.append(item)
-                elif isinstance(item, dict):
-                    query = self._normalize_query_format(item)
-                    queries.append(query)
-                else:
-                    logger.warning(f"Skipping item {idx}: unexpected type {type(item)}")
+                query = self._normalize_query_format(item)
+                queries.append(query)
             except KeyError as e:
                 logger.error(f"Error extracting query from item {idx}: {e}")
                 logger.error(f"Item content: {item}")
@@ -163,24 +160,22 @@ class GenerateCommand:
         output: Optional[str] = None,
         no_seed: bool = False,
         limit: Optional[int] = None,
-        format: str = "jsonl"
+        format: str = "jsonl"  # ADDED format parameter
     ):
         """
-        Generate multi-iteration trajectories from seed queries.
-        
-        Phase 2: Each query generates 1-3 training examples based on complexity.
+        Generate trajectories from seed queries.
         
         Args:
             seed_file: Path to seed file (.json or .jsonl)
             n_results: Number of chunks to retrieve per query
             abstract: Whether to abstract document references
             output: Custom output directory (optional)
-            no_seed: Whether to generate without seed queries (not implemented)
+            no_seed: Whether to generate without seed queries (not implemented yet)
             limit: Limit number of queries to process (optional)
             format: Output format ('jsonl' or 'json')
         """
         print("\n" + "=" * 80)
-        print("MULTI-ITERATION TRAJECTORY GENERATION (Phase 2)")
+        print("TRAJECTORY GENERATION")
         print("=" * 80)
         
         # Check if no_seed mode is requested
@@ -198,7 +193,6 @@ class GenerateCommand:
         print(f"📄 Seed file: {seed_file}")
         print(f"   Path: {seed_path}")
         print(f"   Output format: {format}")
-        print(f"   Multi-iteration: Enabled (max 3 iterations)")
         
         # Confirm before proceeding
         if not typer.confirm("Proceed with generation?"):
@@ -231,39 +225,29 @@ class GenerateCommand:
             
             # Generate trajectories
             print("\n" + "─" * 80)
-            print("STEP 3: Generating Multi-Iteration Trajectories")
+            print("STEP 3: Generating Trajectories")
             print("─" * 80)
             
-            all_examples = []
-            
+            trajectories = []
             for i, query in enumerate(queries, 1):
                 print(f"\n⏳ Generating trajectory {i}/{len(queries)}...")
                 print(f"   Query: {query[:80]}{'...' if len(query) > 80 else ''}")
                 
                 try:
-                    # ✅ Returns LIST of TrainingExample objects (not single Trajectory)
-                    examples = self.generator.generate_trajectory(query)
-                    
-                    print(f"   ✅ Generated {len(examples)} training examples")
-                    
-                    # Show iteration details
-                    for ex_idx, example in enumerate(examples, 1):
-                        decision_type = example.metadata.get("decision_type", "UNKNOWN")
-                        iteration = example.metadata.get("iteration", 0)
-                        print(f"      Example {ex_idx}: Iteration {iteration} → {decision_type}")
-                    
-                    # ✅ Convert each example to dict format
-                    for example in examples:
-                        example_dict = example.to_dict(self.generator.field_names)
-                        all_examples.append(example_dict)
+                    trajectory = self.generator.generate_trajectory(
+                        query=query,
+                        n_results=n_results,
+                        abstract=abstract
+                    )
+                    trajectories.append(trajectory)
+                    print(f"   ✅ Generated successfully")
                     
                 except Exception as e:
                     logger.error(f"Error generating trajectory {i}: {e}")
                     print(f"   ❌ Error: {e}")
                     continue
             
-            print(f"\n✅ Generated {len(all_examples)} training examples from {len(queries)} queries")
-            print(f"   Average: {len(all_examples)/len(queries):.1f} examples per query")
+            print(f"\n✅ Generated {len(trajectories)} trajectories")
             
             # Save results
             print("\n" + "─" * 80)
@@ -281,19 +265,17 @@ class GenerateCommand:
             # Generate output filename based on format
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_extension = format if format in ['json', 'jsonl'] else 'jsonl'
+            output_file = out_dir / f"trajectories_{timestamp}.{file_extension}"
             
-            # Save based on format
-            from ..utils import write_jsonl, write_json
+            # Save trajectories
+            self.generator.save_trajectories(
+                trajectories=trajectories,
+                output_path=str(output_file)
+            )
             
-            if format == 'jsonl' or format == 'both':
-                output_file_jsonl = out_dir / f"training_examples_{timestamp}.jsonl"
-                write_jsonl(all_examples, str(output_file_jsonl))
-                print(f"✅ Saved to: {output_file_jsonl}")
-            
-            if format == 'json' or format == 'both':
-                output_file_json = out_dir / f"training_examples_{timestamp}.json"
-                write_json(all_examples, str(output_file_json))
-                print(f"✅ Saved to: {output_file_json}")
+            print(f"✅ Saved {len(trajectories)} trajectories to:")
+            print(f"   {output_file}")
             
             # Show summary
             print("\n" + "=" * 80)
@@ -301,10 +283,10 @@ class GenerateCommand:
             print("=" * 80)
             print(f"\n📊 Summary:")
             print(f"   Input queries: {len(queries)}")
-            print(f"   Training examples generated: {len(all_examples)}")
-            print(f"   Expansion factor: {len(all_examples)/len(queries):.1f}× per query")
+            print(f"   Trajectories generated: {len(trajectories)}")
+            print(f"   Success rate: {len(trajectories)/len(queries)*100:.1f}%")
             print(f"   Output format: {format}")
-            print(f"   Output directory: {out_dir}")
+            print(f"   Output file: {output_file}")
             
         except Exception as e:
             logger.error(f"Generation failed: {e}")
@@ -314,7 +296,7 @@ class GenerateCommand:
 
 def create_generate_app() -> typer.Typer:
     """Create generate command group."""
-    app = typer.Typer(help="Generate multi-iteration trajectories from queries")
+    app = typer.Typer(help="Generate trajectories from queries")
     cmd = GenerateCommand()
     
     @app.command("from-file")
@@ -325,9 +307,9 @@ def create_generate_app() -> typer.Typer:
         output: Optional[str] = typer.Option(None, help="Custom output directory"),
         no_seed: bool = typer.Option(False, help="Generate without seed queries (future feature)"),
         limit: Optional[int] = typer.Option(None, help="Limit number of queries to process"),
-        format: str = typer.Option("jsonl", help="Output format (json, jsonl, or both)")
+        format: str = typer.Option("jsonl", help="Output format (json or jsonl)")  # ADDED format option
     ):
-        """Generate multi-iteration trajectories from seed file (Phase 2)."""
+        """Generate trajectories from seed file."""
         cmd.generate(seed_file, n_results, abstract, output, no_seed, limit, format)
     
     return app
