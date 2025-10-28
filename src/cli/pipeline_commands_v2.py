@@ -57,7 +57,7 @@ class PipelineCommand:
             skip_ingest: Skip ingestion step
             output: Output directory
             limit: Maximum number of training examples
-        
+            
         Returns:
             Exit code (0 = success, 1 = failure)
         """
@@ -116,9 +116,9 @@ class PipelineCommand:
         }
         
         try:
-            # ====
+            # ================================================================
             # STAGE 1: PDF INGESTION (Optional)
-            # ====
+            # ================================================================
             
             if not skip_ingest and pdf_dir:
                 print(f"\n{'='*80}")
@@ -138,9 +138,9 @@ class PipelineCommand:
                 print(f"{'='*80}\n")
                 print("Using existing ChromaDB collection")
             
-            # ====
+            # ================================================================
             # STAGE 2: INITIALIZE COMPONENTS
-            # ====
+            # ================================================================
             
             print(f"\n{'='*80}")
             print("STAGE 2: INITIALIZING COMPONENTS")
@@ -174,9 +174,9 @@ class PipelineCommand:
             )
             print("✅ Trajectory generator initialized")
             
-            # ====
+            # ================================================================
             # STAGE 3: LOAD SEED QUERIES
-            # ====
+            # ================================================================
             
             print(f"\n{'='*80}")
             print("STAGE 3: LOADING SEED QUERIES")
@@ -184,45 +184,21 @@ class PipelineCommand:
             
             seed_data = read_json(str(seed_path))
             
-            if isinstance(seed_data, dict):
-                if 'seed_queries' in seed_data:
-                    seed_queries = seed_data['seed_queries']
-                elif 'queries' in seed_data:
-                    seed_queries = seed_data['queries']
-                else:
-                    print(f"❌ Error: Invalid seed file format")
-                    return 1
+            if isinstance(seed_data, dict): #and 'seeds' in seed_data:
+                seed_queries = [item['query'] for item in seed_data['seeds']]
             elif isinstance(seed_data, list):
-                seed_queries = seed_data
+                seed_queries = [item['query'] if isinstance(item, dict) else item 
+                               for item in seed_data]
             else:
                 print(f"❌ Error: Invalid seed file format")
                 return 1
             
-            # Normalize to list of strings
-            normalized_queries = []
-            for item in seed_queries:
-                if isinstance(item, str):
-                    normalized_queries.append(item)
-                elif isinstance(item, dict):
-                    # Try common keys
-                    if 'query' in item:
-                        normalized_queries.append(item['query'])
-                    elif 'Q' in item:
-                        normalized_queries.append(item['Q'])
-                    elif 'text' in item:
-                        normalized_queries.append(item['text'])
-                    else:
-                        print(f"⚠️  Warning: Skipping item with unknown format: {item}")
-                else:
-                    print(f"⚠️  Warning: Skipping non-string/dict item: {item}")
-            
-            seed_queries = normalized_queries
             stats["seed_queries"] = len(seed_queries)
             print(f"✅ Loaded {len(seed_queries)} seed queries")
             
-            # ====
+            # ================================================================
             # STAGE 4: TRANSFORMATION PIPELINE
-            # ====
+            # ================================================================
             
             print(f"\n{'='*80}")
             print("STAGE 4: TRANSFORMATION PIPELINE (30× EXPANSION)")
@@ -293,9 +269,9 @@ class PipelineCommand:
                 all_transformations = all_transformations[:limit]
                 print(f"\n⚙️  Limited to {len(all_transformations)} transformations")
             
-            # ====
+            # ================================================================
             # STAGE 5: TRAJECTORY GENERATION
-            # ====
+            # ================================================================
             
             print(f"\n{'='*80}")
             print("STAGE 5: TRAJECTORY GENERATION")
@@ -346,9 +322,9 @@ class PipelineCommand:
             print(f"   Generated {len(training_examples)} training examples")
             print(f"{'─'*80}")
             
-            # ====
+            # ================================================================
             # STAGE 6: SAVE TRAINING DATA
-            # ====
+            # ================================================================
             
             print(f"\n{'='*80}")
             print("STAGE 6: SAVING TRAINING DATA")
@@ -366,9 +342,9 @@ class PipelineCommand:
                 json.dump(stats, f, indent=2)
             print(f"💾 Saved statistics: {stats_file}")
             
-            # ====
+            # ================================================================
             # FINAL SUMMARY
-            # ====
+            # ================================================================
             
             print(f"\n{'='*80}")
             print("PIPELINE COMPLETE")
