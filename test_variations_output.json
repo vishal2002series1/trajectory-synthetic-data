@@ -1,0 +1,159 @@
+{
+  "COMPLETE": {
+    "Q": "How do I see what I own?",
+    "COT": "The user wants to see what they own in their portfolio, but the current data only shows \"Mock data for get_portfolio_allocation\" which doesn't provide actual holdings information. I need to get the portfolio performance data which should include specific holdings and positions.",
+    "Tool Set": [
+      {
+        "name": "get_portfolio_performance",
+        "description": "Retrieve the user's portfolio performance metrics including returns, gains/losses, and comparisons to benchmarks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "description": "User identifier"
+            },
+            "period": {
+              "type": "string",
+              "description": "Time period for performance"
+            }
+          }
+        }
+      }
+    ],
+    "Decision": "CALL",
+    "Context": [
+      {
+        "tool": "get_portfolio_allocation",
+        "parameters": {},
+        "data": {
+          "status": "success",
+          "data": "Mock data for get_portfolio_allocation"
+        },
+        "iteration": 0,
+        "timestamp": "2025-10-28T18:56:10.548610"
+      }
+    ],
+    "metadata": {
+      "iteration": 1,
+      "decision_type": "CALL",
+      "seed_query": "What is my current portfolio allocation?",
+      "persona": "P1",
+      "complexity": "Q-",
+      "context_variation": "COMPLETE",
+      "variation_description": "All necessary information available in context",
+      "expected_behavior": "Model has all needed data and can answer/decide directly"
+    }
+  },
+  "MISSING_CONTEXT": {
+    "Q": "How do I see what I own?",
+    "COT": "To answer 'How do I see what I own?', I need data from get_portfolio_allocation. This information is not currently available in the context. I should call get_portfolio_allocation to retrieve it.",
+    "Tool Set": [
+      {
+        "name": "get_portfolio_performance",
+        "description": "Retrieve the user's portfolio performance metrics including returns, gains/losses, and comparisons to benchmarks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "description": "User identifier"
+            },
+            "period": {
+              "type": "string",
+              "description": "Time period for performance"
+            }
+          }
+        }
+      },
+      {
+        "name": "get_portfolio_allocation",
+        "description": "Retrieve get_portfolio_allocation data",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "Decision": "CALL",
+    "Context": [],
+    "metadata": {
+      "iteration": 1,
+      "decision_type": "CALL",
+      "seed_query": "What is my current portfolio allocation?",
+      "persona": "P1",
+      "complexity": "Q-",
+      "context_variation": "MISSING_CONTEXT",
+      "variation_description": "Removed 1 tool result(s) from context",
+      "removed_tools": [
+        "get_portfolio_allocation"
+      ],
+      "remaining_tools": [],
+      "expected_behavior": "Model identifies missing data and generates appropriate tool call"
+    }
+  },
+  "EXTRA_CONTEXT": {
+    "Q": "How do I see what I own?",
+    "COT": "The user wants to see what they own in their portfolio, but the current data only shows \"Mock data for get_portfolio_allocation\" which doesn't provide actual holdings information. I need to get the portfolio performance data which should include specific holdings and positions.\n\nNote: The context also contains data from compare_data, but for this query, I only need information from get_portfolio_allocation. I will focus on the relevant context and filter out the noise.",
+    "Tool Set": [
+      {
+        "name": "get_portfolio_performance",
+        "description": "Retrieve the user's portfolio performance metrics including returns, gains/losses, and comparisons to benchmarks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "description": "User identifier"
+            },
+            "period": {
+              "type": "string",
+              "description": "Time period for performance"
+            }
+          }
+        }
+      }
+    ],
+    "Decision": "CALL",
+    "Context": [
+      {
+        "tool": "get_portfolio_allocation",
+        "parameters": {},
+        "data": {
+          "status": "success",
+          "data": "Mock data for get_portfolio_allocation"
+        },
+        "iteration": 0,
+        "timestamp": "2025-10-28T18:56:10.548610"
+      },
+      {
+        "tool": "compare_data",
+        "data": {
+          "comparison": {
+            "option_a": "Analysis of option A",
+            "option_b": "Analysis of option B"
+          },
+          "recommendation": "Option A is better for your goals"
+        },
+        "iteration": 99,
+        "timestamp": "2025-01-01T00:00:00.000000"
+      }
+    ],
+    "metadata": {
+      "iteration": 1,
+      "decision_type": "CALL",
+      "seed_query": "What is my current portfolio allocation?",
+      "persona": "P1",
+      "complexity": "Q-",
+      "context_variation": "EXTRA_CONTEXT",
+      "variation_description": "Added 1 irrelevant tool result(s)",
+      "extra_tools": [
+        "compare_data"
+      ],
+      "relevant_tools": [
+        "get_portfolio_allocation"
+      ],
+      "expected_behavior": "Model filters noise and uses only relevant context"
+    }
+  }
+}

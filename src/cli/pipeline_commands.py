@@ -16,7 +16,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from ..core import BedrockProvider, VectorStore, PDFParser, ChromaDBManager
-from ..transformations import PersonaTransformer, QueryModifier, ToolDataTransformer
+from ..transformations import PersonaTransformer, QueryModifier, ToolDataTransformer, ContextVariationTransformer
 from ..generators import TrajectoryGeneratorMultiIter  # ✅ Phase 2!
 from ..utils import get_logger, ensure_dir, write_jsonl, write_json, read_json
 
@@ -34,7 +34,7 @@ class PipelineCommand:
             config: Configuration object
         """
         self.config = config
-        logger.info("PipelineCommand initialized (Phase 2 - Multi-Iteration)")
+        logger.info("PipelineCommand initialized (Phase 2 - Multi-Iteration + + Context Variation)")
     
     def run_pipeline(
         self,
@@ -100,8 +100,10 @@ class PipelineCommand:
         if limit:
             print(f"   Limit: {limit} seed queries")
         
-        print(f"\n📊 Expected Expansion (Phase 2):")
-        print(f"   Per seed query: 15-45× (5 personas × 3 complexity × 1-3 iterations)")
+        print(f"\n📊 Expected Expansion (Phase 2.5):")
+        print(f"   Base: 5 personas × 3 complexity × 1-3 iterations")
+        print(f"   Context variations: ×3 (COMPLETE, MISSING, EXTRA)")
+        print(f"   Total: 45-135× per seed query (with context variations)")
         
         # Prompt for confirmation
         response = input(f"\nProceed with pipeline? [y/N]: ")
@@ -168,6 +170,7 @@ class PipelineCommand:
             # Initialize transformers
             persona_tx = PersonaTransformer(provider)
             query_mod = QueryModifier(provider)
+            context_var_tx = ContextVariationTransformer() 
             print("✅ Transformers initialized")
             
             # ✅ Multi-Iteration Generator (Phase 2)
@@ -218,14 +221,18 @@ class PipelineCommand:
                     print(f"⚠️  Warning: Skipping non-string/dict item: {item}")
             
             seeds = normalized_queries
-            stats["total_seeds"] = len(seeds)
+            original_seed_count = len(seeds)
             
             # Apply limit
             if limit:
                 seeds = seeds[:limit]
-                print(f"✅ Loaded {stats['total_seeds']} seed queries (limiting to {limit})")
+                print(f"✅ Loaded {original_seed_count} seed queries (limiting to {len(seeds)})")
+                # seeds = seeds[:limit]
+                # print(f"✅ Loaded {stats['original_seed_count']} seed queries (limiting to {limit})")
             else:
                 print(f"✅ Loaded {len(seeds)} seed queries")
+                # print(f"✅ Loaded {len(seeds)} seed queries")
+            stats["total_seeds"] = len(seeds)
             
             # ════════════════════════════════════════════════════════════════
             # STAGE 4: APPLY TRANSFORMATIONS & GENERATE
@@ -285,17 +292,43 @@ class PipelineCommand:
                             print(f"      ✅ Generated {len(examples)} training examples")
                             
                             # Show example details
+                            # Show example details
                             for ex_idx, ex in enumerate(examples):
                                 decision_type = ex.metadata["decision_type"]
                                 iteration = ex.metadata["iteration"]
                                 print(f"        Example {ex_idx+1}: Iteration {iteration} → {decision_type}")
-                            
-                            # Convert to output format and collect
+
+                            # ✅ NEW: Apply context variations to each example (×3 expansion)
+                            base_examples = []
                             for example in examples:
                                 example_dict = example.to_dict(generator.field_names)
-                                all_training_examples.append(example_dict)
+                                base_examples.append(example_dict)
+
+                            # Generate context variations
+                            print(f"      Applying context variations...")
+                            for base_example in base_examples:
+                                context_variations = context_var_tx.transform(base_example)
+                                
+                                for var_type, varied_example in context_variations.items():
+                                    all_training_examples.append(varied_example)
+                                
+                                print(f"        → Generated {len(context_variations)} context variations")
+
+                            stats["total_training_examples"] += len(base_examples) * 3  # ×3 for context variations
+
+
+
+                            # for ex_idx, ex in enumerate(examples):
+                            #     decision_type = ex.metadata["decision_type"]
+                            #     iteration = ex.metadata["iteration"]
+                            #     print(f"        Example {ex_idx+1}: Iteration {iteration} → {decision_type}")
                             
-                            stats["total_training_examples"] += len(examples)
+                            # # Convert to output format and collect
+                            # for example in examples:
+                            #     example_dict = example.to_dict(generator.field_names)
+                            #     all_training_examples.append(example_dict)
+                            
+                            # stats["total_training_examples"] += len(examples)
                             
                         except Exception as e:
                             error_msg = f"Trajectory generation failed: {e}"
@@ -330,18 +363,34 @@ class PipelineCommand:
             print("PIPELINE COMPLETE")
             print(f"{'='*80}")
             
+            # print(f"\n📊 STATISTICS:")
+            # print(f"   Seed Queries: {stats['total_seeds']}")
+            # print(f"   Persona Variations: {stats['total_personas']}")
+            # print(f"   Complexity Variations: {stats['total_complexities']}")
+            # print(f"   Training Examples Generated: {stats['total_training_examples']}")
+            
+            # avg_examples = stats['total_training_examples'] / stats['total_seeds']
+            # print(f"\n   Average Examples per Seed: {avg_examples:.1f}")
+            
+            # print(f"\n🎯 EXPANSION FACTOR:")
+            # print(f"   Achieved: ~{avg_examples:.0f}× per seed query")
+            # print(f"   (With full transformations: 15-45× possible)")
+
             print(f"\n📊 STATISTICS:")
-            print(f"   Seed Queries: {stats['total_seeds']}")
+            print(f"   Seed Queries Processed: {stats['total_seeds']}")  # ✅ Clarify "processed"
+            if stats.get("pdfs_ingested", 0) > 0:
+                print(f"   PDFs ingested: {stats['pdfs_ingested']}")
             print(f"   Persona Variations: {stats['total_personas']}")
             print(f"   Complexity Variations: {stats['total_complexities']}")
             print(f"   Training Examples Generated: {stats['total_training_examples']}")
-            
+
             avg_examples = stats['total_training_examples'] / stats['total_seeds']
             print(f"\n   Average Examples per Seed: {avg_examples:.1f}")
-            
+
             print(f"\n🎯 EXPANSION FACTOR:")
             print(f"   Achieved: ~{avg_examples:.0f}× per seed query")
-            print(f"   (With full transformations: 15-45× possible)")
+            print(f"   Components: personas × complexity × iterations × context variations")
+            print(f"   Expected range: 45-135× per seed (with full transformations)")
             
             print(f"\n✅ OUTPUT:")
             print(f"   Training Data: {output_file}")

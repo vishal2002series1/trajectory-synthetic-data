@@ -12,9 +12,11 @@ These transformations expand seed data by applying variations:
 from .persona_transformer import PersonaTransformer
 from .query_modifier import QueryModifier
 from .tool_data_transformer import ToolDataTransformer
+from .context_variation_transformer import ContextVariationTransformer
 
 __all__ = [
     'PersonaTransformer',
     'QueryModifier',
     'ToolDataTransformer',
+    'ContextVariationTransformer',
 ]
