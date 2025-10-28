@@ -18,7 +18,7 @@ pdf_processing:
 # ChromaDB Settings
 chromadb:
   persist_directory: "data/chromadb"
-  collection_name: "document_chunks"
+  collection_name: "document_chunks_v2"
   distance_metric: "cosine"
 
 # Tool Definitions

@@ -135,7 +135,7 @@ class TrajectoryGeneratorV2:
                 "data": f"Mock data for {tool_name}"
             }
     
-    def _real_tool_execution(self, tool_name: str, query: str, n_results: int = 3) -> Dict[str, Any]:
+    def _real_tool_execution_backup(self, tool_name: str, query: str, n_results: int = 3) -> Dict[str, Any]:
         """
         Real tool execution using actual vector store.
         
@@ -187,6 +187,49 @@ class TrajectoryGeneratorV2:
         
         else:
             # For other tools, return placeholder data
+            logger.warning(f"Real execution for tool '{tool_name}' not implemented, using mock")
+            return self._mock_tool_execution(tool_name, query)
+        
+    def _real_tool_execution(self, tool_name: str, query: str, n_results: int = 3) -> Dict[str, Any]:
+        """
+        Real tool execution using actual vector store.
+        """
+        if tool_name == "search_knowledge_base":
+            try:
+                # REAL VECTOR SEARCH using ChromaDB!
+                results = self.vector_store.query(
+                    query_text=query,
+                    n_results=n_results
+                )
+                
+                # FIX: ChromaDB returns nested lists, so we need to flatten them
+                documents = []
+                docs = results.get('documents', [[]])[0]  # Get first (and only) query result
+                metas = results.get('metadatas', [[]])[0]
+                dists = results.get('distances', [[]])[0]
+                
+                for doc, metadata, distance in zip(docs, metas, dists):
+                    documents.append({
+                        "content": doc,
+                        "metadata": metadata,
+                        "score": 1.0 - distance  # Now distance is a float!
+                    })
+                
+                logger.info(f"Retrieved {len(documents)} real documents from ChromaDB")
+                
+                return {
+                    "documents": documents,
+                    "query": query,
+                    "n_results": len(documents),
+                    "source": "ChromaDB"
+                }
+            
+            except Exception as e:
+                logger.error(f"Vector store query failed: {e}")
+                logger.warning("Falling back to mock data due to error")
+                return self._mock_tool_execution(tool_name, query)
+        
+        else:
             logger.warning(f"Real execution for tool '{tool_name}' not implemented, using mock")
             return self._mock_tool_execution(tool_name, query)
     
