@@ -1,0 +1,25 @@
+{
+  "input_file": "data/output/pipeline/20251029_014138/training_examples.jsonl",
+  "output_file": "cleaned_training_data.jsonl",
+  "total_input_examples": 56,
+  "quality_filter": {
+    "passed": 49,
+    "failed": 7
+  },
+  "deduplication": {
+    "total_examples": 49,
+    "unique_examples": 38,
+    "duplicates_removed": 11,
+    "duplicate_clusters": 10,
+    "similarity_threshold": 0.95
+  },
+  "final_examples": 38,
+  "reduction_percentage": 32.14285714285714,
+  "quality_threshold": 0.6,
+  "similarity_threshold": 0.95,
+  "quality_metrics_summary": {
+    "avg_cot_length": 278.4107142857143,
+    "avg_quality_score": 0.866071428571428,
+    "examples_with_mock_data": 34
+  }
+}
